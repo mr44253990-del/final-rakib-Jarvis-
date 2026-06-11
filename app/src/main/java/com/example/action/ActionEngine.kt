@@ -38,6 +38,8 @@ class ActionEngine(
             - "OPEN_APP": target is the app name (e.g., youtube).
             - "SET_ALARM": target is time in HH:MM format.
             - "SAVE_NOTE": target is the note text to save.
+            - "CREATE_FILE": target is the file name, message is the file content.
+            - "DELETE_FILE": target is the file name.
             - "GET_INFO": No specific action, just chatting.
             
             If it's just a conversation, just output text, NO JSON. 
@@ -116,6 +118,30 @@ class ActionEngine(
                     "SAVE_NOTE" -> {
                         memoryRepo.insert(Memory(type = "NOTE", content = target))
                         return "Note saved: $target"
+                    }
+                    "CREATE_FILE" -> {
+                        try {
+                            val file = java.io.File(context.filesDir, target)
+                            file.writeText(message)
+                            val logMsg = "Created File: $target"
+                            memoryRepo.insert(Memory(type = "LOG", content = logMsg))
+                            return logMsg
+                        } catch (e: Exception) {
+                            return "Error creating file: ${e.message}"
+                        }
+                    }
+                    "DELETE_FILE" -> {
+                        try {
+                            val file = java.io.File(context.filesDir, target)
+                            if (file.exists() && file.delete()) {
+                                val logMsg = "Deleted File: $target"
+                                memoryRepo.insert(Memory(type = "LOG", content = logMsg))
+                                return logMsg
+                            }
+                            return "File not found or could not delete: $target"
+                        } catch (e: Exception) {
+                            return "Error deleting file: ${e.message}"
+                        }
                     }
                 }
                 
