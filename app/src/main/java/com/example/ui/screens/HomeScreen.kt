@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,9 +19,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.JarvisApplication
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
+    var showChatSheet by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    
+    if (showChatSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showChatSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.background,
+            modifier = Modifier.fillMaxHeight(0.9f)
+        ) {
+            ChatScreen(app = app) // Directly showing ChatScreen inside the sheet!
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -41,7 +57,6 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            // A pseudo glowing orb (just a bordered circle for now)
             Box(
                 modifier = Modifier
                     .size(140.dp)
@@ -64,7 +79,6 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Actions Grid
         val actions = listOf(
             Triple("Call", Icons.Default.Call, Color(0xFF10B981)),
             Triple("Message", Icons.Default.Message, Color(0xFFF59E0B)),
@@ -86,7 +100,7 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
                 val action = actions[index]
                 Column(
                     modifier = Modifier
-                        .clickable(onClick = onNavigateToChat)
+                        .clickable { showChatSheet = true }
                         .padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -107,7 +121,6 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Bottom Assistant Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -117,21 +130,20 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(Icons.Default.Keyboard, contentDescription = "Keyboard", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable(onClick = onNavigateToChat))
+            Icon(Icons.Default.Keyboard, contentDescription = "Keyboard", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { showChatSheet = true })
             
-            // Microphone Button
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onNavigateToChat),
+                    .clickable { showChatSheet = true },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Speak", tint = MaterialTheme.colorScheme.onPrimary)
             }
             
-            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable(onClick = onNavigateToChat))
+            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { showChatSheet = true })
         }
     }
 }

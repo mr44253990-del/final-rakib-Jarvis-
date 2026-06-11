@@ -21,6 +21,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:name=".JarvisApplication"
@@ -51,6 +53,20 @@
             </intent-filter>
             <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction" />
         </service>
+        
+        <service 
+            android:name=".service.JarvisBackgroundService" 
+            android:foregroundServiceType="specialUse" 
+            android:exported="false" />
+            
+        <receiver android:name=".widget.JarvisWidget" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/jarvis_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

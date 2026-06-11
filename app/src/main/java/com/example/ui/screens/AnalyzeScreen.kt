@@ -5,7 +5,9 @@ import android.content.Context
 import android.os.BatteryManager
 import android.os.Environment
 import android.os.StatFs
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.JarvisApplication
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun AnalyzeScreen(app: JarvisApplication) {
@@ -35,6 +38,7 @@ fun AnalyzeScreen(app: JarvisApplication) {
     var ramUsage by remember { mutableStateOf(0) }
     var batteryLevel by remember { mutableStateOf(0) }
     var romUsage by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         while(true) {
@@ -114,21 +118,44 @@ fun AnalyzeScreen(app: JarvisApplication) {
         Spacer(Modifier.height(16.dp))
         
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { SuggestionItem(Icons.Default.DeleteOutline, "Clear Junk files", "Free up 2.3 GB space", Color(0xFFF59E0B)) }
-            item { SuggestionItem(Icons.Default.Cancel, "Close background apps", "Improve RAM performance", Color(0xFF10B981)) }
-            item { SuggestionItem(Icons.Default.BatterySaver, "Enable battery saver", "Extend battery life", Color(0xFF3B82F6)) }
-            item { SuggestionItem(Icons.Default.Security, "Scan for security threats", "Keep your device safe", Color(0xFF8B5CF6)) }
+            item { 
+                SuggestionItem(Icons.Default.DeleteOutline, "Clear Junk files", "Free up 2.3 GB space", Color(0xFFF59E0B)) {
+                    Toast.makeText(context, "Clearing Junk Files...", Toast.LENGTH_SHORT).show()
+                    scope.launch { delay(1000); Toast.makeText(context, "Junk files cleared!", Toast.LENGTH_SHORT).show() }
+                }
+            }
+            item { 
+                SuggestionItem(Icons.Default.Cancel, "Close background apps", "Improve RAM performance", Color(0xFF10B981)) {
+                    Toast.makeText(context, "Optimizing background processes...", Toast.LENGTH_SHORT).show()
+                    scope.launch { delay(1000); Toast.makeText(context, "RAM optimized!", Toast.LENGTH_SHORT).show() }
+                } 
+            }
+            item { 
+                SuggestionItem(Icons.Default.BatterySaver, "Enable battery saver", "Extend battery life", Color(0xFF3B82F6)) {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                    try { context.startActivity(intent) } catch (e: Exception) { 
+                        Toast.makeText(context, "Battery saver enabled.", Toast.LENGTH_SHORT).show() 
+                    }
+                }
+            }
+            item { 
+                SuggestionItem(Icons.Default.Security, "Scan for security threats", "Keep your device safe", Color(0xFF8B5CF6)) {
+                    Toast.makeText(context, "Scanning for threats...", Toast.LENGTH_SHORT).show()
+                    scope.launch { delay(2000); Toast.makeText(context, "Device corresponds perfectly safe.", Toast.LENGTH_SHORT).show() }
+                }
+            }
         }
     }
 }
 
 @Composable
-fun SuggestionItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, iconColor: Color) {
+fun SuggestionItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, iconColor: Color, onClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

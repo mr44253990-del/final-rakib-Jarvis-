@@ -77,6 +77,18 @@ class MainActivity : ComponentActivity() {
                 val permissionsState = rememberMultiplePermissionsState(permissions = permissionList)
 
                 if (permissionsState.allPermissionsGranted || firstLaunchCompleted) {
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        try {
+                            val intent = android.content.Intent(this@MainActivity, com.example.service.JarvisBackgroundService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                            } else {
+                                startService(intent)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                     JarvisApp(app)
                 } else {
                     PermissionScreen(
