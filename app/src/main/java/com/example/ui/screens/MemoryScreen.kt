@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,10 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.JarvisApplication
+import com.example.db.Memory
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,10 +30,39 @@ import kotlinx.coroutines.launch
 fun MemoryScreen(app: JarvisApplication) {
     val memories by app.memoryRepository.allMemories.collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     
-    val filters = listOf("All", "Calls", "Notes", "Files", "Web")
+    val filters = listOf("All", "Calls", "Notes", "Files", "Web", "Log")
     var selectedFilter by remember { mutableStateOf("All") }
+
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    if (showAddDialog) {
+        var newNote by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Add Memory") },
+            text = {
+                OutlinedTextField(
+                    value = newNote,
+                    onValueChange = { newNote = it },
+                    label = { Text("Memory Content") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newNote.isNotBlank()) {
+                        scope.launch { app.memoryRepository.insert(Memory(type = "NOTE", content = newNote)) }
+                        Toast.makeText(context, "Memory Added", Toast.LENGTH_SHORT).show()
+                    }
+                    showAddDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -62,6 +95,7 @@ fun MemoryScreen(app: JarvisApplication) {
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { selectedFilter = filter }
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
                             Text(
@@ -76,7 +110,7 @@ fun MemoryScreen(app: JarvisApplication) {
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { /* TODO */ },
+                onClick = { showAddDialog = true },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("Add New Memory") },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -86,27 +120,33 @@ fun MemoryScreen(app: JarvisApplication) {
         floatingActionButtonPosition = FabPosition.Center
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            val filteredList = memories.filter { selectedFilter == "All" || it.type == selectedFilter.uppercase() }
+            val filteredList = memories.filter { 
+                (selectedFilter == "All" || it.type == selectedFilter.uppercase()) &&
+                (searchQuery.isBlank() || it.content.contains(searchQuery, ignoreCase = true))
+            }
             if (filteredList.isEmpty() && memories.isNotEmpty()) {
                item { Text("No memories match filter.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             
             // Mock static items to match UI if empty
             if (memories.isEmpty()) {
-                item { MemoryItem(Icons.Default.Person, "Saved Contact", "Rakib Hasan - 017XXX....", "Today, 10:30 AM", Color(0xFF3B82F6)) }
-                item { MemoryItem(Icons.Default.Note, "Note", "Meeting with team at 5 PM", "Today, 09:15 AM", Color(0xFFEAB308)) }
-                item { MemoryItem(Icons.Default.Alarm, "Reminder", "Buy groceries", "Today, 08:00 AM", Color(0xFFFF453A)) }
-                item { MemoryItem(Icons.Default.InsertDriveFile, "File", "Project_Report.pdf", "Yesterday, 11:45 PM", Color(0xFFEC4899)) }
-                item { MemoryItem(Icons.Default.Language, "Website", "Flutter Documentation", "Yesterday, 09:30 PM", Color(0xFF3B82F6)) }
+                item { MemoryItem(Icons.Default.Person, "Saved Contact", "Rakib Hasan - 017XXX....", "Today, 10:30 AM", Color(0xFF3B82F6)) {} }
+                item { MemoryItem(Icons.Default.Note, "Note", "Meeting with team at 5 PM", "Today, 09:15 AM", Color(0xFFEAB308)) {} }
+                item { MemoryItem(Icons.Default.Alarm, "Reminder", "Buy groceries", "Today, 08:00 AM", Color(0xFFFF453A)) {} }
+                item { MemoryItem(Icons.Default.InsertDriveFile, "File", "Project_Report.pdf", "Yesterday, 11:45 PM", Color(0xFFEC4899)) {} }
+                item { MemoryItem(Icons.Default.Language, "Website", "Flutter Documentation", "Yesterday, 09:30 PM", Color(0xFF3B82F6)) {} }
             }
 
-            items(filteredList) { memo ->
+            items(filteredList, key = { it.id }) { memo ->
                 MemoryItem(
                     icon = Icons.Default.Memory,
                     title = memo.type,
                     subtitle = memo.content,
-                    time = "Just now",
-                    iconColor = MaterialTheme.colorScheme.primary
+                    time = "ID: ${memo.id}",
+                    iconColor = MaterialTheme.colorScheme.primary,
+                    onDelete = {
+                        scope.launch { app.memoryRepository.delete(memo.id) }
+                    }
                 )
             }
         }
@@ -114,7 +154,7 @@ fun MemoryScreen(app: JarvisApplication) {
 }
 
 @Composable
-fun MemoryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, time: String, iconColor: Color) {
+fun MemoryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, time: String, iconColor: Color, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -130,6 +170,8 @@ fun MemoryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: Str
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+        }
     }
 }

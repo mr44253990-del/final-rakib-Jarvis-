@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
     var showChatSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     if (showChatSheet) {
         ModalBottomSheet(
@@ -49,12 +53,12 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Center Orb / Face
         Box(
             modifier = Modifier
                 .size(160.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { showChatSheet = true },
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -84,7 +88,7 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
             Triple("Message", Icons.Default.Message, Color(0xFFF59E0B)),
             Triple("File Search", Icons.Default.Search, Color(0xFF3B82F6)),
             Triple("YouTube", Icons.Default.PlayArrow, Color(0xFFFF453A)),
-            Triple("Open App", Icons.Default.Apps, Color(0xFF8B5CF6)),
+            Triple("Web", Icons.Default.Language, Color(0xFF8B5CF6)),
             Triple("Music", Icons.Default.MusicNote, Color(0xFFEC4899)),
             Triple("Note", Icons.Default.Note, Color(0xFFEAB308)),
             Triple("More", Icons.Default.MoreHoriz, Color(0xFF94A3B8))
@@ -100,7 +104,16 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
                 val action = actions[index]
                 Column(
                     modifier = Modifier
-                        .clickable { showChatSheet = true }
+                        .clickable { 
+                            when(action.first) {
+                                "Call" -> context.startActivity(Intent(Intent.ACTION_DIAL))
+                                "Message" -> context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MESSAGING))
+                                "YouTube" -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")))
+                                "Music" -> context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC))
+                                "Web" -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")))
+                                else -> showChatSheet = true 
+                            }
+                        }
                         .padding(4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -137,13 +150,28 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
-                    .clickable { showChatSheet = true },
+                    .clickable { 
+                        try {
+                            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            }
+                            context.startActivity(intent)
+                        } catch(e: Exception) {
+                            showChatSheet = true
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Speak", tint = MaterialTheme.colorScheme.onPrimary)
             }
             
-            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { showChatSheet = true })
+            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { 
+                try {
+                    context.startActivity(Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
+                } catch(e: Exception) {
+                    showChatSheet = true
+                }
+            })
         }
     }
 }

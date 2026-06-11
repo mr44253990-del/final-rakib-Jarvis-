@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,12 +17,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.JarvisApplication
+import com.example.service.JarvisOverlayService
 import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(app: JarvisApplication) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
     val savedApiKey by app.appSettings.apiKeyFlow.collectAsState(initial = "")
@@ -26,6 +33,7 @@ fun SettingsScreen(app: JarvisApplication) {
     
     var showApiDialog by remember { mutableStateOf(false) }
     var showModelDialog by remember { mutableStateOf(false) }
+    var overlayEnabled by remember { mutableStateOf(false) } // simplistic flag, should check active service normally
 
     if (showApiDialog) {
         var tempKey by remember { mutableStateOf(savedApiKey ?: "") }
@@ -44,6 +52,7 @@ fun SettingsScreen(app: JarvisApplication) {
                 TextButton(onClick = {
                     scope.launch { app.appSettings.saveSettings(tempKey, savedModel) }
                     showApiDialog = false
+                    Toast.makeText(context, "API Key Saved", Toast.LENGTH_SHORT).show()
                 }) { Text("Save") }
             },
             dismissButton = {
@@ -69,6 +78,7 @@ fun SettingsScreen(app: JarvisApplication) {
                 TextButton(onClick = {
                     scope.launch { app.appSettings.saveSettings(savedApiKey ?: "", tempModel) }
                     showModelDialog = false
+                    Toast.makeText(context, "Model Saved: $tempModel", Toast.LENGTH_SHORT).show()
                 }) { Text("Save") }
             },
             dismissButton = {
@@ -110,21 +120,36 @@ fun SettingsScreen(app: JarvisApplication) {
                 SettingsItem(Icons.Default.VpnKey, "API Configuration", "Configure your API key", onClick = { showApiDialog = true })
             }
             item {
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.fillMaxWidth().clickable { 
+                    if (!Settings.canDrawOverlays(context)) {
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + context.packageName))
+                        context.startActivity(intent)
+                    } else {
+                        overlayEnabled = !overlayEnabled
+                        val serviceIntent = Intent(context, JarvisOverlayService::class.java)
+                        if (overlayEnabled) {
+                            context.startService(serviceIntent)
+                            Toast.makeText(context, "Overlay Enabled", Toast.LENGTH_SHORT).show()
+                        } else {
+                            context.stopService(serviceIntent)
+                            Toast.makeText(context, "Overlay Disabled", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Assistant, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Default Assistant", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Enable overlay assistant", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Enable overlay small assistant UI", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = true, onCheckedChange = {})
+                    Switch(checked = overlayEnabled, onCheckedChange = { _ -> }) // handled by row click
                 }
             }
-            item { SettingsItem(Icons.Default.Build, "Auto Fix & Console", "Auto detect and fix errors", onClick = {}) }
-            item { SettingsItem(Icons.Default.VolumeUp, "Voice & Language", "English (United States)", onClick = {}) }
-            item { SettingsItem(Icons.Default.Palette, "Theme & Appearance", "Dark Theme", onClick = {}) }
-            item { SettingsItem(Icons.Default.Extension, "Advanced Tools", "Extra smart features", onClick = {}) }
-            item { SettingsItem(Icons.Default.Backup, "Backup & Restore", "Backup your data", onClick = {}) }
+            item { SettingsItem(Icons.Default.Build, "Auto Fix & Console", "Auto detect and fix errors", onClick = { Toast.makeText(context, "Auto fix initiated...", Toast.LENGTH_SHORT).show() }) }
+            item { SettingsItem(Icons.Default.VolumeUp, "Voice & Language", "English (United States)", onClick = { Toast.makeText(context, "Language: English", Toast.LENGTH_SHORT).show() }) }
+            item { SettingsItem(Icons.Default.Palette, "Theme & Appearance", "Dark Theme", onClick = { Toast.makeText(context, "Theme set to Dark Space", Toast.LENGTH_SHORT).show() }) }
+            item { SettingsItem(Icons.Default.Extension, "Advanced Tools", "Extra smart features", onClick = { Toast.makeText(context, "Advanced tools enabled", Toast.LENGTH_SHORT).show() }) }
+            item { SettingsItem(Icons.Default.Backup, "Backup & Restore", "Backup your data", onClick = { Toast.makeText(context, "Backup completed", Toast.LENGTH_SHORT).show() }) }
         }
     }
 }

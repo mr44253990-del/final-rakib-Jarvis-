@@ -59,6 +59,10 @@
             android:foregroundServiceType="specialUse" 
             android:exported="false" />
             
+        <service 
+            android:name=".service.JarvisOverlayService" 
+            android:exported="false" />
+            
         <receiver android:name=".widget.JarvisWidget" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
