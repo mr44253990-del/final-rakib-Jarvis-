@@ -45,12 +45,28 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.MultiplePermissionsState
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class MainActivity : ComponentActivity() {
+    private val isAssistTriggered = androidx.compose.runtime.mutableStateOf(false)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == android.content.Intent.ACTION_ASSIST) {
+            isAssistTriggered.value = true
+        }
+    }
+
     @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (intent?.action == android.content.Intent.ACTION_ASSIST) {
+            isAssistTriggered.value = true
+        }
+
         setContent {
             MyApplicationTheme {
                 val app = application as JarvisApplication
@@ -78,6 +94,27 @@ class MainActivity : ComponentActivity() {
 
                 if (permissionsState.allPermissionsGranted || firstLaunchCompleted) {
                     androidx.compose.runtime.LaunchedEffect(Unit) {
+                        // Pre-populate database with dynamic mock contacts & logs if empty!
+                        try {
+                            val db = app.memoryRepository
+                            val firstSnapshot = db.allMemories.first()
+                            if (firstSnapshot.isEmpty()) {
+                                db.insert(com.example.db.Memory(type = "CONTACT", content = "আম্মা (মাতা): ০১৭১১-২২৩৩৪৪"))
+                                db.insert(com.example.db.Memory(type = "CONTACT", content = "রাকিব (বন্ধু): ০১৬৭৮-১১২২৩৩"))
+                                db.insert(com.example.db.Memory(type = "CONTACT", content = "রহমান ভাই (অফিস): ০১৫৫২-৪৪৫৫৬৬"))
+                                db.insert(com.example.db.Memory(type = "CONTACT", content = "জরুরী সেবা (৯৯৯): ৯৯৯"))
+                                
+                                db.insert(com.example.db.Memory(type = "NOTE", content = "কাঁচা বাজার তালিকা: আলু ২ কেজি, পেঁয়াজ ১ কেজি, ডিম ১ ডজন।"))
+                                db.insert(com.example.db.Memory(type = "NOTE", content = "অফিস মিটিং নোট: বিকাল ৪ টায় টিমের রিভিউ সেশন হবে।"))
+                                
+                                db.insert(com.example.db.Memory(type = "LOG", content = "Received call from আম্মা (০১৭১১২২৩৩৪৪) - ১০ মিনিট আগে।"))
+                                db.insert(com.example.db.Memory(type = "LOG", content = "Missed call from রাকিব ০১৬৭৮১১২২৩৩ - ১ ঘণ্টা আগে।"))
+                                db.insert(com.example.db.Memory(type = "LOG", content = "Dialed to রহমান ভাই ০১৫৫২৪৪৫৫৬৬ - সকাল ৮:১৫ মিনিট।"))
+                            }
+                        } catch (dbEx: Exception) {
+                            dbEx.printStackTrace()
+                        }
+
                         try {
                             val intent = android.content.Intent(this@MainActivity, com.example.service.JarvisBackgroundService::class.java)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -89,7 +126,11 @@ class MainActivity : ComponentActivity() {
                             e.printStackTrace()
                         }
                     }
-                    JarvisApp(app)
+                    JarvisApp(
+                        app = app, 
+                        isAssistTriggered = isAssistTriggered.value,
+                        onDismissAssist = { isAssistTriggered.value = false }
+                    )
                 } else {
                     PermissionScreen(
                         permissionsState = permissionsState,
