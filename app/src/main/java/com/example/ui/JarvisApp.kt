@@ -3,9 +3,10 @@ package com.example.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SpaceDashboard
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,9 +21,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.JarvisApplication
 import com.example.ui.screens.ChatScreen
-import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.AnalyzeScreen
 import com.example.ui.screens.MemoryScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.HomeScreen
 
 @Composable
 fun JarvisApp(app: JarvisApplication) {
@@ -32,41 +34,51 @@ fun JarvisApp(app: JarvisApplication) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.SpaceDashboard, contentDescription = "Dashboard") },
-                    label = { Text("Dashboard") },
-                    selected = currentRoute == "dashboard",
-                    onClick = { navController.navigate("dashboard") }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Mic, contentDescription = "Jarvis") },
-                    label = { Text("Jarvis") },
-                    selected = currentRoute == "chat",
-                    onClick = { navController.navigate("chat") }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.List, contentDescription = "Memory") },
-                    label = { Text("Memory") },
-                    selected = currentRoute == "memory",
-                    onClick = { navController.navigate("memory") }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
-                    selected = currentRoute == "settings",
-                    onClick = { navController.navigate("settings") }
-                )
+            if (currentRoute != "chat") {
+                NavigationBar {
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                        label = { Text("Home") },
+                        selected = currentRoute == "home",
+                        onClick = { navController.navigate("home") }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.List, contentDescription = "Memory") },
+                        label = { Text("Memory") },
+                        selected = currentRoute == "memory",
+                        onClick = { navController.navigate("memory") }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Analytics, contentDescription = "Analyze") },
+                        label = { Text("Analyze") },
+                        selected = currentRoute == "analyze",
+                        onClick = { navController.navigate("analyze") }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Build, contentDescription = "Tools") },
+                        label = { Text("Tools") },
+                        selected = currentRoute == "tools",
+                        onClick = { navController.navigate("tools") }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings") },
+                        selected = currentRoute == "settings",
+                        onClick = { navController.navigate("settings") }
+                    )
+                }
             }
         }
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = "dashboard",
+            startDestination = "home",
             modifier = Modifier.padding(padding)
         ) {
-            composable("dashboard") { DashboardScreen(app) }
+            composable("home") { HomeScreen(app, onNavigateToChat = { navController.navigate("chat") }) }
+            composable("analyze") { AnalyzeScreen(app) }
             composable("chat") { ChatScreen(app) }
+            composable("tools") { ChatScreen(app) } // Tools maps to Chat/Action screen for now
             composable("memory") { MemoryScreen(app) }
             composable("settings") { SettingsScreen(app) }
         }

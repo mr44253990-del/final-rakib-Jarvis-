@@ -46,7 +46,8 @@ class ActionEngine(
             Keep your conversational text short, smart, and helpful.
         """.trimIndent()
 
-        val url = "v1beta/models/${modelName.trim()}:generateContent"
+        val cleanModelName = modelName.trim().substringAfterLast("/")
+        val url = "v1beta/models/$cleanModelName:generateContent"
 
         val request = GenerateContentRequest(
             contents = listOf(Content(parts = listOf(Part(text = prompt)))),

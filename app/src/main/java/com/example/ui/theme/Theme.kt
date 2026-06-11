@@ -17,14 +17,18 @@ import androidx.core.view.WindowCompat
 
 private val JarvisColorScheme = darkColorScheme(
     primary = JarvisPrimary,
-    background = JarvisBackground,
-    surface = JarvisSurface,
-    surfaceVariant = JarvisSurfaceVariant,
     onPrimary = JarvisBackground,
+    secondary = JarvisSecondary,
+    onSecondary = JarvisText,
+    tertiary = JarvisAccent,
+    background = JarvisBackground,
     onBackground = JarvisText,
+    surface = JarvisSurface,
     onSurface = JarvisText,
+    surfaceVariant = JarvisSurfaceVariant,
     onSurfaceVariant = JarvisTextMuted,
-    secondary = JarvisAccent
+    error = JarvisError,
+    onError = JarvisText
 )
 
 @Composable

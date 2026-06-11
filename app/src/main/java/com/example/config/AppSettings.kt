@@ -22,7 +22,7 @@ class AppSettings(private val context: Context) {
     }
 
     val modelNameFlow: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[MODEL_NAME] ?: "gemini-3.1-flash-lite-preview"
+        preferences[MODEL_NAME] ?: "gemini-3.1-flash-lite"
     }
 
     suspend fun saveSettings(apiKey: String, modelName: String) {
