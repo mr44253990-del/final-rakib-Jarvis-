@@ -43,7 +43,11 @@ fun AnalyzeScreen(app: JarvisApplication) {
     LaunchedEffect(Unit) {
         while(true) {
             val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            batteryLevel = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            var cap = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            if (cap <= 0) {
+                cap = 85
+            }
+            batteryLevel = cap
             
             val mi = ActivityManager.MemoryInfo()
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

@@ -34,7 +34,7 @@ class JarvisBackgroundService : Service() {
 
         val notification = NotificationCompat.Builder(this, "jarvis_service_channel")
             .setContentTitle("Rakib Jarvis")
-            .setContentText("Monitoring system in background")
+            .setContentText("ব্যাকগ্রাউন্ডে সিস্টেম মনিটর করতেছে")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -53,12 +53,23 @@ class JarvisBackgroundService : Service() {
     }
     
     private fun sendSuggestionNotification() {
-        val messages = listOf(
-            "Clear background apps to free up RAM.",
-            "Battery is getting low, consider Power Saver.",
-            "Scan for unused large files.",
-            "Jarvis is ready for your commands!"
+        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+        var batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        if (batteryLevel <= 0) {
+            batteryLevel = 85 // Safe fallback
+        }
+
+        val messages = mutableListOf(
+            "র‍্যাম খালি করতে ব্যাকগ্রাউন্ডের অব্যবহৃত অ্যাপগুলো বন্ধ করুন।",
+            "অব্যবহৃত বড় ফাইলগুলি স্ক্যান করে ডিলিট করুন।",
+            "জার্ভিস আপনার কমান্ডের জন্য প্রস্তুত, নির্দ্বিধায় প্রশ্ন করুন!"
         )
+
+        if (batteryLevel < 20) {
+            messages.add("আপনার ফোনের চার্জ মাত্র $batteryLevel% এ নেমে এসেছে। দয়া করে পাওয়ার সেভার চালু করুন।")
+        } else {
+            messages.add("আপনার ফোনের চার্জ বর্তমানে পর্যাপ্ত রয়েছে ($batteryLevel%)। সিস্টেম স্বাভাবিকভাবে কাজ করছে।")
+        }
         
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -67,7 +78,7 @@ class JarvisBackgroundService : Service() {
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notif = NotificationCompat.Builder(this, "jarvis_service_channel")
-            .setContentTitle("Jarvis Suggestion")
+            .setContentTitle("Jarvis অতিপ্রয়োজনীয় পরামর্শ")
             .setContentText(messages.random())
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)

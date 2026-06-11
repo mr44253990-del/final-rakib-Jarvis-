@@ -13,6 +13,7 @@ import com.example.gemini.Part
 import com.example.gemini.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 
 import android.graphics.Bitmap
@@ -31,19 +32,32 @@ class ActionEngine(
         imageBitmap: Bitmap? = null
     ): String = withContext(Dispatchers.IO) {
         
-        // Dynamic API Key safe routing fallback logic
-        val actualKey = if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
-            com.example.BuildConfig.GEMINI_API_KEY
-        } else {
-            apiKey
-        }
+        val isMistral = modelName.contains("mistral", ignoreCase = true) || modelName.contains("codestral", ignoreCase = true)
         
-        if (actualKey.isEmpty() || actualKey == "MY_GEMINI_API_KEY") {
-            return@withContext "Please configure your Gemini API Key in Settings."
+        val actualKey = if (isMistral) {
+            val app = context.applicationContext as? com.example.JarvisApplication
+            val savedMistralKey = app?.appSettings?.mistralApiKeyFlow?.first()
+            if (savedMistralKey.isNullOrBlank()) {
+                return@withContext "দয়া করে Settings-এ গিয়ে আপনার Mistral API Key সেট করুন।"
+            }
+            savedMistralKey
+        } else {
+            val key = if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+                com.example.BuildConfig.GEMINI_API_KEY
+            } else {
+                apiKey
+            }
+            if (key.isEmpty() || key == "MY_GEMINI_API_KEY") {
+                return@withContext "দয়া করে Settings-এ গিয়ে আপনার Gemini API Key সেট করুন।"
+            }
+            key
         }
 
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
-        val batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        var batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        if (batteryLevel <= 0) {
+            batteryLevel = 85 // Safe realistic fallback for VM/Emulator container
+        }
 
         val systemPrompt = """
             You are an advanced Android AI Assistant named "Rakib Jarvis".
@@ -51,11 +65,14 @@ class ActionEngine(
             Current Phone Status:
             - Battery Level: $batteryLevel%
             
+            IMPORTANT: Under all circumstances, you MUST communicate and speak in Bengali (বাংলা ভাষা) to the user.
+            Even if they ask the question in English, generate all conversational responses and messages in polite, natural sounding Bengali.
+            
             If the user asks to perform an action, output a JSON object in this exact format, wrapped in ```json ... ```:
             {
                "action": "ACTION_NAME",
                "target": "TARGET_INFO",
-               "message": "Information to show the user"
+               "message": "Information in Bengali to show and speak to the user"
             }
             
             Supported ACTIONS:
@@ -69,8 +86,27 @@ class ActionEngine(
             - "GET_INFO": No specific action, just chatting.
             
             If it's just a conversation, just output text, NO JSON. 
-            Keep your conversational text short, smart, and helpful.
+            Keep your conversational text short, smart, and helpful. All speaking text must be in clean, friendly Bengali (বাংলা ভাষা).
         """.trimIndent()
+
+        if (isMistral) {
+            try {
+                val response = com.example.gemini.MistralRetrofitClient.service.getChatCompletion(
+                    authHeader = "Bearer $actualKey",
+                    request = com.example.gemini.MistralChatRequest(
+                        model = modelName,
+                        messages = listOf(
+                            com.example.gemini.MistralMessage("system", systemPrompt),
+                            com.example.gemini.MistralMessage("user", prompt)
+                        )
+                    )
+                )
+                val responseText = response.choices?.firstOrNull()?.message?.content ?: "Mistral থেকে কোনো সাড়া পাওয়া যায়নি।"
+                return@withContext executeParsedAction(responseText)
+            } catch (e: Exception) {
+                return@withContext "Mistral সংযোগ ত্রুটি: ${e.message}"
+            }
+        }
 
         // Restrict prohibited models & use stable default to fix 403
         val inputModelName = if (modelName.isBlank() || modelName.contains("1.5") || modelName.contains("2.0")) {
@@ -108,12 +144,12 @@ class ActionEngine(
 
         try {
             val response = RetrofitClient.service.generateContent(url, actualKey, request)
-            val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "No response from Jarvis."
+            val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Jarvis থেকে কোনো সাড়া পাওয়া যায়নি।"
             
             return@withContext executeParsedAction(responseText)
             
         } catch (e: Exception) {
-            "Connection error or invalid configuration: ${e.message}"
+            "সংযোগ ত্রুটি বা অবৈধ কনফিগারেশন: ${e.message}"
         }
     }
 

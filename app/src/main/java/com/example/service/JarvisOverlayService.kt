@@ -17,6 +17,10 @@ import com.example.MainActivity
 
 class JarvisOverlayService : Service() {
 
+    companion object {
+        var isServiceRunning = false
+    }
+
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: View
 
@@ -24,14 +28,14 @@ class JarvisOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         
-        // Simple overlay view with the app icon or custom orb
+        // Simple overlay view with the custom glowing assistant orb
         overlayView = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_btn_speak_now) // fallback mic icon or similar
-            // using default background
-            setPadding(16, 16, 16, 16)
-            setBackgroundColor(0x88000000.toInt()) // Semi-transparent black
+            setImageResource(R.drawable.jarvis_logo_1781166610226)
+            setPadding(8, 8, 8, 8)
+            setBackgroundColor(0x00000000) // Transparent background for elegant floating look
         }
 
         val layoutFlag: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -94,6 +98,7 @@ class JarvisOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
         if (::overlayView.isInitialized) {
             windowManager.removeView(overlayView)
         }

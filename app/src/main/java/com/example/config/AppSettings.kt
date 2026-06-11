@@ -15,12 +15,17 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class AppSettings(private val context: Context) {
     companion object {
         val API_KEY = stringPreferencesKey("api_key")
+        val MISTRAL_API_KEY = stringPreferencesKey("mistral_api_key")
         val MODEL_NAME = stringPreferencesKey("model_name")
         val FIRST_LAUNCH = booleanPreferencesKey("first_launch_done")
     }
 
     val apiKeyFlow: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[API_KEY]
+    }
+
+    val mistralApiKeyFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[MISTRAL_API_KEY]
     }
 
     val modelNameFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -35,6 +40,12 @@ class AppSettings(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[API_KEY] = apiKey
             preferences[MODEL_NAME] = modelName
+        }
+    }
+
+    suspend fun saveMistralKey(key: String) {
+        context.dataStore.edit { preferences ->
+            preferences[MISTRAL_API_KEY] = key
         }
     }
 
