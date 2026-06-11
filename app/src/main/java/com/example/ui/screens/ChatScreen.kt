@@ -28,20 +28,73 @@ import com.example.JarvisApplication
 import com.example.action.ActionEngine
 import kotlinx.coroutines.launch
 
+import com.example.assistant.JarvisVoiceController
+import com.example.db.Memory
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(app: JarvisApplication) {
     val context = LocalContext.current
     var message by remember { mutableStateOf("") }
-    var responses by remember { mutableStateOf(listOf("Jarvis: Hello Sir, how may I assist you today?")) }
+    var localPendingPrompt by remember { mutableStateOf("") }
     var showPreviewPanel by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val actionEngine = remember { ActionEngine(context, app.memoryRepository) }
     
     val apiKey by app.appSettings.apiKeyFlow.collectAsState(initial = "")
-    val modelName by app.appSettings.modelNameFlow.collectAsState(initial = "gemini-3.1-flash-lite")
+    val modelName by app.appSettings.modelNameFlow.collectAsState(initial = "gemini-3.5-flash")
     val memories by app.memoryRepository.allMemories.collectAsStateWithLifecycle(initialValue = emptyList())
-    val recentLogs = memories.filter { it.type == "LOG" }.take(20)
+    
+    val chatMessagesSnapshot = remember(memories) {
+        memories.filter { it.type == "CHAT_USER" || it.type == "CHAT_JARVIS" }.sortedBy { it.timestamp }
+    }
+    
+    val recentLogs = memories.filter { it.type == "LOG" }.take(15)
+    val savedNotes = memories.filter { it.type == "NOTE" }.take(15)
+
+    // Dynamic list that includes persistent memory and active thinking bubbles
+    val displayList = remember(chatMessagesSnapshot, localPendingPrompt) {
+        val baseList = chatMessagesSnapshot
+        if (localPendingPrompt.isNotBlank()) {
+            baseList + listOf(
+                Memory(type = "CHAT_USER", content = localPendingPrompt),
+                Memory(type = "CHAT_JARVIS", content = "জার্ভিস চিন্তা করতেছে...")
+            )
+        } else {
+            baseList
+        }
+    }
+
+    // Voice Input State inside Chat screen for complete user comfort
+    var isVoiceListening by remember { mutableStateOf(false) }
+    var voiceControllerInstance by remember { mutableStateOf<JarvisVoiceController?>(null) }
+
+    val voiceController = remember {
+        val controller = JarvisVoiceController(
+            context = context,
+            onTextRecognized = { text ->
+                if (text.isNotBlank()) {
+                    localPendingPrompt = text
+                    scope.launch {
+                        val reply = actionEngine.processUserRequest(text, apiKey ?: "", modelName)
+                        localPendingPrompt = ""
+                        voiceControllerInstance?.speak(reply)
+                    }
+                }
+            },
+            onListeningStatusChanged = { listening ->
+                isVoiceListening = listening
+            }
+        )
+        voiceControllerInstance = controller
+        controller
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceController.destroy()
+        }
+    }
 
     Row(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -49,31 +102,36 @@ fun ChatScreen(app: JarvisApplication) {
                 title = { 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Rakib Jarvis", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Online • Ready", style = MaterialTheme.typography.labelSmall, color = Color(0xFF10B981))
+                        Text(if (isVoiceListening) "Listening..." else "Online • Ready", style = MaterialTheme.typography.labelSmall, color = if (isVoiceListening) MaterialTheme.colorScheme.error else Color(0xFF10B981))
                     }
                 },
                 navigationIcon = {
-                    Box(modifier = Modifier.padding(8.dp).size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
+                    Box(modifier = Modifier.padding(8.dp).size(32.dp).clip(CircleShape).background(if (isVoiceListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)) {
                         /* Simulated Orb */
                         Box(modifier = Modifier.size(16.dp).align(Alignment.Center).clip(CircleShape).background(MaterialTheme.colorScheme.onPrimary))
                     }
                 },
                 actions = {
                     IconButton(onClick = { showPreviewPanel = !showPreviewPanel }) {
-                        Icon(Icons.Default.History, contentDescription = "Toggle Action Preview")
+                        Icon(Icons.Default.History, contentDescription = "Toggle Action Preview", tint = if (showPreviewPanel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
             
+            val listToDisplay = if (displayList.isEmpty()) {
+                listOf(Memory(type = "CHAT_JARVIS", content = "হ্যালো স্যার, আমি রাকিব জার্ভিস। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?"))
+            } else {
+                displayList
+            }
+
             LazyColumn(
                 modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(responses) { resp ->
-                    val isYou = resp.startsWith("You:")
-                    val text = resp.substringAfter(": ")
+                items(listToDisplay) { memo ->
+                    val isYou = memo.type == "CHAT_USER"
                     val align = if (isYou) Alignment.End else Alignment.Start
                     val color = if (isYou) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                     val textColor = if (isYou) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -90,7 +148,7 @@ fun ChatScreen(app: JarvisApplication) {
                                 .background(color)
                                 .padding(16.dp)
                         ) {
-                            Text(text, color = textColor, style = MaterialTheme.typography.bodyLarge)
+                            Text(memo.content, color = textColor, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -101,8 +159,16 @@ fun ChatScreen(app: JarvisApplication) {
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 8.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { /* TODO implement mic */ }) {
-                        Icon(Icons.Default.Mic, contentDescription = "Voice", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(
+                        onClick = { 
+                            if (isVoiceListening) {
+                                voiceController.stopListening()
+                            } else {
+                                voiceController.startListening()
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "Voice", tint = if (isVoiceListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextField(
                         value = message,
@@ -120,11 +186,12 @@ fun ChatScreen(app: JarvisApplication) {
                         onClick = {
                             val msg = message
                             if (msg.isNotBlank()) {
-                                responses = responses + "You: $msg"
+                                localPendingPrompt = msg
                                 message = ""
                                 scope.launch {
                                     val reply = actionEngine.processUserRequest(msg, apiKey ?: "", modelName)
-                                    responses = responses + "Jarvis: $reply"
+                                    localPendingPrompt = ""
+                                    voiceController.speak(reply)
                                 }
                             }
                         }
@@ -143,13 +210,14 @@ fun ChatScreen(app: JarvisApplication) {
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(220.dp)
+                    .width(240.dp)
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(16.dp)
             ) {
-                Text("Action Log", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                Spacer(Modifier.height(16.dp))
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Section 1: System Actions
+                Text("System Logs (লাইভ)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.weight(0.5f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         if (recentLogs.isEmpty()) {
                             Text("No actions taken yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -159,6 +227,25 @@ fun ChatScreen(app: JarvisApplication) {
                         Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp)) {
                             Text("SYSTEM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             Text(log.content, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                // Section 2: Saved Notes Live Preview! Fully responsive when note added/read!
+                Text("Saved Notes (নোটসমূহ)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.weight(0.5f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        if (savedNotes.isEmpty()) {
+                            Text("কোনো নোট সেভ করা নেই।", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    items(savedNotes) { note ->
+                        Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp)) {
+                            Text("NOTE ID: ${note.id}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFF59E0B))
+                            Text(note.content, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

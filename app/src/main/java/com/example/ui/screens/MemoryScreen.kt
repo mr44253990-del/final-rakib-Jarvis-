@@ -169,8 +169,16 @@ fun MemoryScreen(app: JarvisApplication) {
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             val filteredList = memories.filter { 
-                (selectedFilter == "All" || it.type == selectedFilter.uppercase()) &&
-                (searchQuery.isBlank() || it.content.contains(searchQuery, ignoreCase = true))
+                val matchesFilter = when(selectedFilter.uppercase()) {
+                    "ALL" -> it.type != "CHAT_USER" && it.type != "CHAT_JARVIS"
+                    "CALLS" -> it.type == "CONTACT" || it.type == "CALL"
+                    "NOTES" -> it.type == "NOTE"
+                    "FILES" -> it.type == "LOG" || it.type == "FILE"
+                    "WEB" -> it.type == "WEB"
+                    "LOG" -> it.type == "LOG"
+                    else -> it.type == selectedFilter.uppercase()
+                }
+                matchesFilter && (searchQuery.isBlank() || it.content.contains(searchQuery, ignoreCase = true))
             }
             if (filteredList.isEmpty() && memories.isNotEmpty()) {
                item { Text("No memories match filter.", color = MaterialTheme.colorScheme.onSurfaceVariant) }

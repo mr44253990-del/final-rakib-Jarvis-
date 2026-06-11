@@ -59,16 +59,63 @@ class ActionEngine(
             batteryLevel = 85 // Safe realistic fallback for VM/Emulator container
         }
 
+        // Fetch dynamic records and persistent memory snapshot from local DB
+        val memoriesSnapshot = try {
+            memoryRepo.allMemories.first()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val savedNotes = memoriesSnapshot.filter { it.type == "NOTE" }
+        val savedContacts = memoriesSnapshot.filter { it.type == "CONTACT" }
+        val savedTodos = memoriesSnapshot.filter { it.type == "TODO" }
+
+        val notesContext = if (savedNotes.isEmpty()) "কোনো নোট সেভ করা নেই।" else {
+            savedNotes.joinToString("\n") { "- নোট ID ${it.id}: ${it.content}" }
+        }
+        val contactsContext = if (savedContacts.isEmpty()) "কোনো কন্ট্যাক্ট সেভ করা নেই।" else {
+            savedContacts.joinToString("\n") { "- কন্ট্যাক্ট ID ${it.id}: ${it.content}" }
+        }
+        val todosContext = if (savedTodos.isEmpty()) "কোনো টুডু লিস্ট সেভ করা নেই।" else {
+            savedTodos.joinToString("\n") { "- টুডু ID ${it.id}: ${it.content}" }
+        }
+
+        // Retrieve latest 15 chats for live interactive memory context, reversed so it is chronological
+        val recentChatHistory = memoriesSnapshot
+            .filter { it.type == "CHAT_USER" || it.type == "CHAT_JARVIS" }
+            .take(15)
+            .reversed()
+
+        val chatHistoryContext = if (recentChatHistory.isEmpty()) "কোনো পূর্ববর্তী কথোপকথন নেই।" else {
+            recentChatHistory.joinToString("\n") { msg ->
+                val speaker = if (msg.type == "CHAT_USER") "User" else "Jarvis"
+                "$speaker: ${msg.content}"
+            }
+        }
+
         val systemPrompt = """
             You are an advanced Android AI Assistant named "Rakib Jarvis".
-            You have access to the user's phone.
+            You have access to the user's phone, their local actions, and saved records in Room DB.
             Current Phone Status:
             - Battery Level: $batteryLevel%
+            
+            সংরক্ষিত তথ্যসমূহ (Database snapshot - You can read from this real database directly!):
+            1. ব্যবহারকারীর সংরক্ষিত নোটসমূহ (Saved Notes):
+            $notesContext
+            
+            2. সংরক্ষিত কন্ট্যাক্টসমূহ:
+            $contactsContext
+            
+            3. সংরক্ষিত টুডু লিস্ট:
+            $todosContext
+            
+            পূর্ববর্তী কথোপকথনের ইতিহাস (Dynamic Conversation Memory - persisted across app restarts!):
+            $chatHistoryContext
             
             IMPORTANT: Under all circumstances, you MUST communicate and speak in Bengali (বাংলা ভাষা) to the user.
             Even if they ask the question in English, generate all conversational responses and messages in polite, natural sounding Bengali.
             
-            If the user asks to perform an action, output a JSON object in this exact format, wrapped in ```json ... ```:
+            If the user asks to perform an action (e.g., save note, make call, open app, delete file), output a JSON object in this exact format, wrapped in ```json ... ```:
             {
                "action": "ACTION_NAME",
                "target": "TARGET_INFO",
@@ -85,11 +132,15 @@ class ActionEngine(
             - "FLASHLIGHT": target is "ON" or "OFF".
             - "GET_INFO": No specific action, just chatting.
             
-            If it's just a conversation, just output text, NO JSON. 
+            Important interaction rules:
+            - To save a note or register something in memory (e.g., "এই কথাটি মনে রেখো: ৫ টায় অফিস যাবো" or "নোট সেভ করো: আম কিনতে হবে"), you MUST output the "SAVE_NOTE" action.
+            - To read, show, search, or verbalize existing notes (e.g., "আমার কী কী নোট আছে বলো", "নোটগুলো দেখাও", "মিটিং নোটটা কী?"), do NOT output a JSON action. Simply read the note from the "Database Snapshot" above and state it clearly as conversational text (GET_INFO text style).
+            
+            If it's just a conversation or presenting information/reading notes, just output text, NO JSON. 
             Keep your conversational text short, smart, and helpful. All speaking text must be in clean, friendly Bengali (বাংলা ভাষা).
         """.trimIndent()
 
-        if (isMistral) {
+        val finalResult = if (isMistral) {
             try {
                 val response = com.example.gemini.MistralRetrofitClient.service.getChatCompletion(
                     authHeader = "Bearer $actualKey",
@@ -102,55 +153,63 @@ class ActionEngine(
                     )
                 )
                 val responseText = response.choices?.firstOrNull()?.message?.content ?: "Mistral থেকে কোনো সাড়া পাওয়া যায়নি।"
-                return@withContext executeParsedAction(responseText)
+                executeParsedAction(responseText)
             } catch (e: Exception) {
-                return@withContext "Mistral সংযোগ ত্রুটি: ${e.message}"
+                "Mistral সংযোগ ত্রুটি: ${e.message}"
             }
-        }
-
-        // Restrict prohibited models & use stable default to fix 403
-        val inputModelName = if (modelName.isBlank() || modelName.contains("1.5") || modelName.contains("2.0")) {
-            "gemini-3.5-flash"
         } else {
-            modelName.trim().substringAfterLast("/")
-        }
-        val url = "v1beta/models/$inputModelName:generateContent"
+            // Restrict prohibited models & use stable default to fix 403
+            val inputModelName = if (modelName.isBlank() || modelName.contains("1.5") || modelName.contains("2.0")) {
+                "gemini-3.5-flash"
+            } else {
+                modelName.trim().substringAfterLast("/")
+            }
+            val url = "v1beta/models/$inputModelName:generateContent"
 
-        val partList = mutableListOf<com.example.gemini.Part>()
-        partList.add(com.example.gemini.Part(text = prompt))
-        
-        if (imageBitmap != null) {
-            try {
-                val outputStream = ByteArrayOutputStream()
-                imageBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-                val base64Data = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                partList.add(
-                    com.example.gemini.Part(
-                        inlineData = com.example.gemini.InlineData(
-                            mimeType = "image/jpeg",
-                            data = base64Data
+            val partList = mutableListOf<com.example.gemini.Part>()
+            partList.add(com.example.gemini.Part(text = prompt))
+            
+            if (imageBitmap != null) {
+                try {
+                    val outputStream = ByteArrayOutputStream()
+                    imageBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+                    val base64Data = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                    partList.add(
+                        com.example.gemini.Part(
+                            inlineData = com.example.gemini.InlineData(
+                                mimeType = "image/jpeg",
+                                data = base64Data
+                            )
                         )
                     )
-                )
-            } catch (imageEx: Exception) {
-                // Ignore encode error and proceed with text-only
+                } catch (imageEx: Exception) {
+                    // Ignore encode error and proceed with text-only
+                }
+            }
+
+            val request = GenerateContentRequest(
+                contents = listOf(Content(parts = partList)),
+                systemInstruction = Content(parts = listOf(com.example.gemini.Part(text = systemPrompt)))
+            )
+
+            try {
+                val response = RetrofitClient.service.generateContent(url, actualKey, request)
+                val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Jarvis থেকে কোনো সাড়া পাওয়া যায়নি।"
+                executeParsedAction(responseText)
+            } catch (e: Exception) {
+                "সংযোগ ত্রুটি বা অবৈধ কনফিগারেশন: ${e.message}"
             }
         }
 
-        val request = GenerateContentRequest(
-            contents = listOf(Content(parts = partList)),
-            systemInstruction = Content(parts = listOf(com.example.gemini.Part(text = systemPrompt)))
-        )
-
+        // Save conversation history log in local DB for absolute persistence
         try {
-            val response = RetrofitClient.service.generateContent(url, actualKey, request)
-            val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "Jarvis থেকে কোনো সাড়া পাওয়া যায়নি।"
-            
-            return@withContext executeParsedAction(responseText)
-            
-        } catch (e: Exception) {
-            "সংযোগ ত্রুটি বা অবৈধ কনফিগারেশন: ${e.message}"
+            memoryRepo.insert(Memory(type = "CHAT_USER", content = prompt))
+            memoryRepo.insert(Memory(type = "CHAT_JARVIS", content = finalResult))
+        } catch (dbEx: Exception) {
+            // Catch silently
         }
+
+        return@withContext finalResult
     }
 
     private suspend fun executeParsedAction(response: String): String {
