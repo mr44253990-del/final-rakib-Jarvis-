@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.ContactsContract
+import android.os.Environment
 import com.example.db.Memory
 import com.example.db.MemoryRepository
 import com.example.gemini.Content
@@ -24,6 +25,106 @@ class ActionEngine(
     private val context: Context,
     private val memoryRepo: MemoryRepository
 ) {
+
+    private fun fetchDeviceContacts(context: Context): List<String> {
+        val contactsList = mutableListOf<String>()
+        try {
+            val contentResolver = context.contentResolver
+            val cursor = contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                ),
+                null,
+                null,
+                null
+            )
+            cursor?.use { c ->
+                val nameIndex = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIndex = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                var count = 0
+                while (c.moveToNext() && count < 50) {
+                    val name = if (nameIndex >= 0) c.getString(nameIndex) else ""
+                    val number = if (numberIndex >= 0) c.getString(numberIndex) else ""
+                    if (name.isNotBlank() && number.isNotBlank()) {
+                        contactsList.add("$name: $number")
+                        count++
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return contactsList
+    }
+
+    private fun saveDeviceContact(context: Context, target: String): Boolean {
+        try {
+            val parts = target.split(":")
+            val name = parts.firstOrNull()?.trim() ?: "কন্ট্যাক্ট"
+            val number = parts.drop(1).joinToString(":").trim()
+            if (number.isBlank()) return false
+            
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                type = ContactsContract.Contacts.CONTENT_TYPE
+                putExtra(ContactsContract.Intents.Insert.NAME, name)
+                putExtra(ContactsContract.Intents.Insert.PHONE, number)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
+    }
+
+    private fun resolveFileOrFolder(path: String): java.io.File {
+        val trimmed = path.trim()
+        if (trimmed.startsWith("/")) {
+            return java.io.File(trimmed)
+        }
+        val lower = trimmed.lowercase()
+        if (lower.startsWith("download")) {
+            val leftover = trimmed.substring(8).trimStart('/', '\\')
+            return java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), leftover)
+        }
+        if (lower.startsWith("dcim")) {
+            val leftover = trimmed.substring(4).trimStart('/', '\\')
+            return java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), leftover)
+        }
+        if (lower.startsWith("documents") || lower.startsWith("document")) {
+            val leftover = trimmed.substring(9).trimStart('/', '\\')
+            return java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), leftover)
+        }
+        if (lower.startsWith("pictures") || lower.startsWith("picture")) {
+            val leftover = trimmed.substring(8).trimStart('/', '\\')
+            return java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), leftover)
+        }
+        return java.io.File(context.filesDir, trimmed)
+    }
+
+    private fun copyDirectory(sourceLocation: java.io.File, targetLocation: java.io.File) {
+        if (sourceLocation.isDirectory) {
+            if (!targetLocation.exists()) {
+                targetLocation.mkdirs()
+            }
+            val children = sourceLocation.list() ?: emptyArray()
+            for (i in children.indices) {
+                copyDirectory(
+                    java.io.File(sourceLocation, children[i]),
+                    java.io.File(targetLocation, children[i])
+                )
+            }
+        } else {
+            sourceLocation.inputStream().use { input ->
+                targetLocation.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
 
     suspend fun processUserRequest(
         prompt: String, 
@@ -73,9 +174,13 @@ class ActionEngine(
         val notesContext = if (savedNotes.isEmpty()) "কোনো নোট সেভ করা নেই।" else {
             savedNotes.joinToString("\n") { "- নোট ID ${it.id}: ${it.content}" }
         }
-        val contactsContext = if (savedContacts.isEmpty()) "কোনো কন্ট্যাক্ট সেভ করা নেই।" else {
-            savedContacts.joinToString("\n") { "- কন্ট্যাক্ট ID ${it.id}: ${it.content}" }
+        
+        val deviceContactsList = fetchDeviceContacts(context)
+        val combinedContacts = (savedContacts.map { "Room DB ID ${it.id}: ${it.content}" } + deviceContactsList).distinct()
+        val contactsContext = if (combinedContacts.isEmpty()) "কোনো কন্ট্যাক্ট সেভ করা নেই।" else {
+            combinedContacts.joinToString("\n") { "- $it" }
         }
+        
         val todosContext = if (savedTodos.isEmpty()) "কোনো টুডু লিস্ট সেভ করা নেই।" else {
             savedTodos.joinToString("\n") { "- টুডু ID ${it.id}: ${it.content}" }
         }
@@ -300,8 +405,11 @@ class ActionEngine(
                         return "নোট সেভ করা হয়েছে: $target"
                     }
                     "SAVE_CONTACT" -> {
-                        memoryRepo.insert(Memory(type = "CONTACT", content = target))
-                        return "কন্ট্যাক্ট সফলভাবে সংরক্ষণ করা হয়েছে: $target"
+                        val trimmedTarget = target.trim()
+                        memoryRepo.insert(Memory(type = "CONTACT", content = trimmedTarget))
+                        val savedToDevice = saveDeviceContact(context, trimmedTarget)
+                        val deviceStatus = if (savedToDevice) " এবং নতুন পরিচিতি সিস্টেমে যোগ করার জন্য কন্ট্যাক্ট এডিটর সক্রিয় করা হয়েছে।" else ""
+                        return "কন্ট্যাক্ট সফলভাবে সংরক্ষণ করা হয়েছে: $trimmedTarget$deviceStatus"
                     }
                     "DELETE_MEMORY" -> {
                         val searchTarget = target.trim()
@@ -326,24 +434,26 @@ class ActionEngine(
                     }
                     "CREATE_FILE" -> {
                         try {
-                            val file = java.io.File(context.filesDir, target)
+                            val file = resolveFileOrFolder(target)
+                            // ensure directory exists
+                            file.parentFile?.mkdirs()
                             file.writeText(message)
-                            val logMsg = "Created File: $target"
+                            val logMsg = "Created File: ${file.absolutePath}"
                             memoryRepo.insert(Memory(type = "LOG", content = logMsg))
-                            return logMsg
+                            return "ফাইল তৈরি সম্পন্ন হয়েছে: ${file.name}"
                         } catch (e: Exception) {
                             return "Error creating file: ${e.message}"
                         }
                     }
                     "DELETE_FILE" -> {
                         try {
-                            val file = java.io.File(context.filesDir, target)
+                            val file = resolveFileOrFolder(target)
                             if (file.exists() && file.delete()) {
-                                val logMsg = "Deleted File: $target"
+                                val logMsg = "Deleted File: ${file.absolutePath}"
                                 memoryRepo.insert(Memory(type = "LOG", content = logMsg))
-                                return logMsg
+                                return "ফাইল সফলভাবে ডিলিট করা হয়েছে: ${file.name}"
                             }
-                            return "File not found or could not delete: $target"
+                            return "ফাইলটি পাওয়া যায়নি: ${target}"
                         } catch (e: Exception) {
                             return "Error deleting file: ${e.message}"
                         }
@@ -351,13 +461,19 @@ class ActionEngine(
                     "COPY_FOLDER" -> {
                         try {
                             val parts = target.split("->").map { it.trim() }
-                            val srcDir = java.io.File(context.filesDir, parts[0])
-                            val destDir = java.io.File(context.filesDir, parts.getOrElse(1) { parts[0] + "_copy" })
-                            if (!srcDir.exists()) srcDir.mkdirs()
-                            destDir.mkdirs()
-                            val logMsg = "Copied Folder ${srcDir.name} to ${destDir.name}"
+                            val srcName = parts.getOrNull(0) ?: ""
+                            val destName = parts.getOrNull(1) ?: (srcName + "_copy")
+                            
+                            val srcDir = resolveFileOrFolder(srcName)
+                            val destDir = resolveFileOrFolder(destName)
+                            
+                            if (!srcDir.exists()) {
+                                return "উৎস ফোল্ডারটি (${srcDir.absolutePath}) খুঁজে পাওয়া যায়নি।"
+                            }
+                            copyDirectory(srcDir, destDir)
+                            val logMsg = "Copied Folder ${srcDir.absolutePath} to ${destDir.absolutePath}"
                             memoryRepo.insert(Memory(type = "LOG", content = logMsg))
-                            return "ফোল্ডার কপি অপারেশন সম্পন্ন হয়েছে, স্যার।"
+                            return "ফোল্ডার '${srcDir.name}' সফলভাবে '${destDir.name}' ফোল্ডারে কপি করা হয়েছে।"
                         } catch (e: Exception) {
                             return "ফোল্ডার কপি করতে সমস্যা হয়েছে: ${e.message}"
                         }
@@ -365,25 +481,34 @@ class ActionEngine(
                     "PASTE_FOLDER" -> {
                         try {
                             val parts = target.split("->").map { it.trim() }
-                            val destDir = java.io.File(context.filesDir, parts.last())
-                            if (!destDir.exists()) destDir.mkdirs()
-                            val logMsg = "Pasted Folder context into ${destDir.name}"
+                            val srcName = parts.getOrNull(0) ?: ""
+                            val destName = parts.getOrNull(1) ?: srcName
+                            
+                            val srcDir = resolveFileOrFolder(srcName)
+                            val destDir = resolveFileOrFolder(destName)
+                            
+                            if (!srcDir.exists()) {
+                                return "উৎস ফোল্ডারটি (${srcDir.absolutePath}) খুঁজে পাওয়া যায়নি।"
+                            }
+                            copyDirectory(srcDir, destDir)
+                            val logMsg = "Pasted Folder ${srcDir.absolutePath} to ${destDir.absolutePath}"
                             memoryRepo.insert(Memory(type = "LOG", content = logMsg))
-                            return "ফোল্ডার পেস্ট অপারেশন সফল হয়েছে, স্যার।"
+                            return "ফোল্ডার পেস্ট করা হয়েছে: '${destDir.name}'"
                         } catch (e: Exception) {
                             return "ফোল্ডার পেস্ট করতে সমস্যা হয়েছে: ${e.message}"
                         }
                     }
                     "DELETE_FOLDER" -> {
                         try {
-                            val dir = java.io.File(context.filesDir, target)
+                            val dir = resolveFileOrFolder(target)
                             if (dir.exists()) {
+                                val folderName = dir.name
                                 dir.deleteRecursively()
-                                val logMsg = "Deleted Folder: $target"
+                                val logMsg = "Deleted Folder: ${dir.absolutePath}"
                                 memoryRepo.insert(Memory(type = "LOG", content = logMsg))
-                                return "ফোল্ডারটি ($target) সফলভাবে ডিলিট করা হয়েছে।"
+                                return "ফোল্ডারটি (${folderName}) সম্পূর্ণ ডিলিট করা হয়েছে।"
                             }
-                            return "ফোল্ডারটি পাওয়া যায়নি।"
+                            return "ফোল্ডারটি পাওয়া যায়নি: ${target}"
                         } catch (e: Exception) {
                             return "ফোল্ডার ডিলিট করতে সমস্যা হয়েছে: ${e.message}"
                         }
