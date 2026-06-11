@@ -23,9 +23,15 @@ class ActionEngine(
     suspend fun processUserRequest(prompt: String, apiKey: String, modelName: String): String = withContext(Dispatchers.IO) {
         if (apiKey.isEmpty()) return@withContext "Please configure your Gemini API Key in Settings."
 
+        val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+        val batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+
         val systemPrompt = """
             You are an advanced Android AI Assistant named "Rakib Jarvis".
             You have access to the user's phone.
+            Current Phone Status:
+            - Battery Level: $batteryLevel%
+            
             If the user asks to perform an action, output a JSON object in this exact format, wrapped in ```json ... ```:
             {
                "action": "ACTION_NAME",
@@ -40,6 +46,7 @@ class ActionEngine(
             - "SAVE_NOTE": target is the note text to save.
             - "CREATE_FILE": target is the file name, message is the file content.
             - "DELETE_FILE": target is the file name.
+            - "FLASHLIGHT": target is "ON" or "OFF".
             - "GET_INFO": No specific action, just chatting.
             
             If it's just a conversation, just output text, NO JSON. 
@@ -142,6 +149,19 @@ class ActionEngine(
                             return "File not found or could not delete: $target"
                         } catch (e: Exception) {
                             return "Error deleting file: ${e.message}"
+                        }
+                    }
+                    "FLASHLIGHT" -> {
+                        try {
+                            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+                            val cameraId = cameraManager.cameraIdList[0]
+                            val isTurnOn = target.uppercase() == "ON"
+                            cameraManager.setTorchMode(cameraId, isTurnOn)
+                            val status = if (isTurnOn) "turned ON" else "turned OFF"
+                            memoryRepo.insert(Memory(type = "LOG", content = "Flashlight $status"))
+                            return "Flashlight has been $status, Sir."
+                        } catch (e: Exception) {
+                            return "Failed to access Flashlight: ${e.message}"
                         }
                     }
                 }

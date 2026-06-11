@@ -2,6 +2,7 @@ package com.example.config
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,6 +16,7 @@ class AppSettings(private val context: Context) {
     companion object {
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL_NAME = stringPreferencesKey("model_name")
+        val FIRST_LAUNCH = booleanPreferencesKey("first_launch_done")
     }
 
     val apiKeyFlow: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -25,10 +27,20 @@ class AppSettings(private val context: Context) {
         preferences[MODEL_NAME] ?: "gemini-3.1-flash-lite"
     }
 
+    val firstLaunchCompletedFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[FIRST_LAUNCH] ?: false
+    }
+
     suspend fun saveSettings(apiKey: String, modelName: String) {
         context.dataStore.edit { preferences ->
             preferences[API_KEY] = apiKey
             preferences[MODEL_NAME] = modelName
+        }
+    }
+
+    suspend fun completeFirstLaunch() {
+        context.dataStore.edit { preferences ->
+            preferences[FIRST_LAUNCH] = true
         }
     }
 }
