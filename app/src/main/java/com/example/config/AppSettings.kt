@@ -24,7 +24,7 @@ class AppSettings(private val context: Context) {
     }
 
     val modelNameFlow: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[MODEL_NAME] ?: "gemini-3.1-flash-lite"
+        preferences[MODEL_NAME] ?: "gemini-3.5-flash"
     }
 
     val firstLaunchCompletedFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->

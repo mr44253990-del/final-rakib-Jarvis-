@@ -15,13 +15,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
+import android.util.Base64
+
 class ActionEngine(
     private val context: Context,
     private val memoryRepo: MemoryRepository
 ) {
 
-    suspend fun processUserRequest(prompt: String, apiKey: String, modelName: String): String = withContext(Dispatchers.IO) {
-        if (apiKey.isEmpty()) return@withContext "Please configure your Gemini API Key in Settings."
+    suspend fun processUserRequest(
+        prompt: String, 
+        apiKey: String, 
+        modelName: String, 
+        imageBitmap: Bitmap? = null
+    ): String = withContext(Dispatchers.IO) {
+        
+        // Dynamic API Key safe routing fallback logic
+        val actualKey = if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            com.example.BuildConfig.GEMINI_API_KEY
+        } else {
+            apiKey
+        }
+        
+        if (actualKey.isEmpty() || actualKey == "MY_GEMINI_API_KEY") {
+            return@withContext "Please configure your Gemini API Key in Settings."
+        }
 
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
         val batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
@@ -53,16 +72,42 @@ class ActionEngine(
             Keep your conversational text short, smart, and helpful.
         """.trimIndent()
 
-        val cleanModelName = modelName.trim().substringAfterLast("/")
-        val url = "v1beta/models/$cleanModelName:generateContent"
+        // Restrict prohibited models & use stable default to fix 403
+        val inputModelName = if (modelName.isBlank() || modelName.contains("1.5") || modelName.contains("2.0")) {
+            "gemini-3.5-flash"
+        } else {
+            modelName.trim().substringAfterLast("/")
+        }
+        val url = "v1beta/models/$inputModelName:generateContent"
+
+        val partList = mutableListOf<com.example.gemini.Part>()
+        partList.add(com.example.gemini.Part(text = prompt))
+        
+        if (imageBitmap != null) {
+            try {
+                val outputStream = ByteArrayOutputStream()
+                imageBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+                val base64Data = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                partList.add(
+                    com.example.gemini.Part(
+                        inlineData = com.example.gemini.InlineData(
+                            mimeType = "image/jpeg",
+                            data = base64Data
+                        )
+                    )
+                )
+            } catch (imageEx: Exception) {
+                // Ignore encode error and proceed with text-only
+            }
+        }
 
         val request = GenerateContentRequest(
-            contents = listOf(Content(parts = listOf(Part(text = prompt)))),
-            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+            contents = listOf(Content(parts = partList)),
+            systemInstruction = Content(parts = listOf(com.example.gemini.Part(text = systemPrompt)))
         )
 
         try {
-            val response = RetrofitClient.service.generateContent(url, apiKey, request)
+            val response = RetrofitClient.service.generateContent(url, actualKey, request)
             val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "No response from Jarvis."
             
             return@withContext executeParsedAction(responseText)

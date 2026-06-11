@@ -24,6 +24,14 @@ import androidx.compose.ui.unit.dp
 import com.example.JarvisApplication
 import kotlinx.coroutines.launch
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Bitmap
+import com.example.action.ActionEngine
+import com.example.assistant.JarvisVoiceController
+import androidx.compose.ui.graphics.asImageBitmap
+import android.widget.Toast
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
@@ -31,6 +39,128 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
+    val apiKey by app.appSettings.apiKeyFlow.collectAsState(initial = "")
+    val modelName by app.appSettings.modelNameFlow.collectAsState(initial = "gemini-3.5-flash")
+    
+    val actionEngine = remember { ActionEngine(context, app.memoryRepository) }
+    
+    var assistantResponse by remember { mutableStateOf("") }
+    var assistantLoading by remember { mutableStateOf(false) }
+    
+    // Voice State variables
+    var isVoiceListening by remember { mutableStateOf(false) }
+    var voiceInputText by remember { mutableStateOf("") }
+    
+    var voiceControllerInstance by remember { mutableStateOf<JarvisVoiceController?>(null) }
+    
+    // Voice controller initialization
+    val voiceController = remember {
+        val controller = JarvisVoiceController(
+            context = context,
+            onTextRecognized = { text ->
+                voiceInputText = text
+                if (text.isNotBlank()) {
+                    scope.launch {
+                        assistantLoading = true
+                        assistantResponse = "Analyzing voice command: \"$text\"..."
+                        val reply = actionEngine.processUserRequest(text, apiKey ?: "", modelName)
+                        assistantResponse = reply
+                        assistantLoading = false
+                        voiceControllerInstance?.speak(reply) // Speak back!
+                    }
+                }
+            },
+            onListeningStatusChanged = { listening ->
+                isVoiceListening = listening
+            }
+        )
+        voiceControllerInstance = controller
+        controller
+    }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceController.destroy()
+        }
+    }
+    
+    // Keyboard Input State
+    var showKeyboardInput by remember { mutableStateOf(false) }
+    var typedPrompt by remember { mutableStateOf("") }
+
+    // Camera Capture State
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showCameraPromptDialog by remember { mutableStateOf(false) }
+    var cameraPromptText by remember { mutableStateOf("") }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            capturedBitmap = bitmap
+            cameraPromptText = "Describe this captured image"
+            showCameraPromptDialog = true
+        }
+    }
+
+    if (showCameraPromptDialog && capturedBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { showCameraPromptDialog = false },
+            title = { Text("Analyze Photo with Jarvis") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.foundation.Image(
+                            bitmap = capturedBitmap!!.asImageBitmap(),
+                            contentDescription = "Captured snap",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    OutlinedTextField(
+                        value = cameraPromptText,
+                        onValueChange = { cameraPromptText = it },
+                        label = { Text("Ask Jarvis about this picture") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val prompt = cameraPromptText
+                        val bitmap = capturedBitmap
+                        showCameraPromptDialog = false
+                        if (bitmap != null) {
+                            scope.launch {
+                                assistantLoading = true
+                                assistantResponse = "Uploading captured vision snap..."
+                                val reply = actionEngine.processUserRequest(prompt, apiKey ?: "", modelName, bitmap)
+                                assistantResponse = reply
+                                assistantLoading = false
+                                voiceController.speak(reply)
+                            }
+                        }
+                    }
+                ) {
+                    Text("Submit Vision Request")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCameraPromptDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (showChatSheet) {
         ModalBottomSheet(
             onDismissRequest = { showChatSheet = false },
@@ -38,7 +168,7 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxHeight(0.9f)
         ) {
-            ChatScreen(app = app) // Directly showing ChatScreen inside the sheet!
+            ChatScreen(app = app)
         }
     }
 
@@ -49,39 +179,94 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Rakib Jarvis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        Text("Online", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Online • Voice Enabled", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
+        // Large Assistant Orb Clickable
         Box(
             modifier = Modifier
-                .size(160.dp)
+                .size(150.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable { showChatSheet = true },
+                .background(
+                    if (isVoiceListening) MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
+                )
+                .clickable {
+                    if (isVoiceListening) {
+                        voiceController.stopListening()
+                    } else {
+                        voiceInputText = ""
+                        voiceController.startListening()
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(140.dp)
+                    .size(130.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
-                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                if (isVoiceListening) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(110.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        strokeWidth = 4.dp
+                    )
+                    Text("Listening...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                } else if (assistantLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(110.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 4.dp
+                    )
+                    Text("Thinking...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                        Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-        Text("Hello, Rakib \uD83D\uDC4B", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        Text("How can I help you today?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(32.dp))
+        // Assistant active text readout Card
+        if (assistantResponse.isNotBlank() || voiceInputText.isNotBlank()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    if (voiceInputText.isNotBlank()) {
+                        Text(
+                            text = "You said: \"$voiceInputText\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (assistantResponse.isNotBlank()) {
+                        Text(
+                            text = assistantResponse,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         val actions = listOf(
             Triple("Call", Icons.Default.Call, Color(0xFF10B981)),
@@ -119,20 +304,64 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surface),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(action.second, contentDescription = action.first, tint = action.third, modifier = Modifier.size(24.dp))
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(action.first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
             }
         }
 
         Spacer(modifier = Modifier.weight(1f))
+
+        // Direct Text Input overlay
+        if (showKeyboardInput) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = typedPrompt,
+                    onValueChange = { typedPrompt = it },
+                    placeholder = { Text("Ask Jarvis anything...") },
+                    modifier = Modifier.weight(1f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    singleLine = true
+                )
+                IconButton(
+                    onClick = {
+                        val prompt = typedPrompt
+                        if (prompt.isNotBlank()) {
+                            typedPrompt = ""
+                            showKeyboardInput = false
+                            scope.launch {
+                                assistantLoading = true
+                                assistantResponse = "Processing command..."
+                                val reply = actionEngine.processUserRequest(prompt, apiKey ?: "", modelName)
+                                assistantResponse = reply
+                                assistantLoading = false
+                                voiceController.speak(reply)
+                            }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Submit", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         Row(
             modifier = Modifier
@@ -143,35 +372,47 @@ fun HomeScreen(app: JarvisApplication, onNavigateToChat: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(Icons.Default.Keyboard, contentDescription = "Keyboard", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { showChatSheet = true })
+            Icon(
+                Icons.Default.Keyboard, 
+                contentDescription = "Keyboard", 
+                tint = if (showKeyboardInput) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, 
+                modifier = Modifier.clickable { showKeyboardInput = !showKeyboardInput }
+            )
             
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(if (isVoiceListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                     .clickable { 
-                        try {
-                            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            }
-                            context.startActivity(intent)
-                        } catch(e: Exception) {
-                            showChatSheet = true
+                        if (isVoiceListening) {
+                            voiceController.stopListening()
+                        } else {
+                            voiceInputText = ""
+                            voiceController.startListening()
                         }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Mic, contentDescription = "Speak", tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(
+                    imageVector = Icons.Default.Mic, 
+                    contentDescription = "Speak", 
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
             }
             
-            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable { 
-                try {
-                    context.startActivity(Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
-                } catch(e: Exception) {
-                    showChatSheet = true
+            Icon(
+                Icons.Default.CameraAlt, 
+                contentDescription = "Camera", 
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, 
+                modifier = Modifier.clickable { 
+                    try {
+                        cameraLauncher.launch(null)
+                    } catch(e: Exception) {
+                        Toast.makeText(context, "Error launching Camera app", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            })
+            )
         }
     }
 }

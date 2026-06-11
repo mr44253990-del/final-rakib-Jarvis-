@@ -37,6 +37,54 @@ fun MemoryScreen(app: JarvisApplication) {
     var selectedFilter by remember { mutableStateOf("All") }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    
+    // Memory Detail popup state
+    var activeDetailTitle by remember { mutableStateOf("") }
+    var activeDetailContent by remember { mutableStateOf("") }
+    var showDetailDialog by remember { mutableStateOf(false) }
+
+    // Local Text to Speech
+    var tts: android.speech.tts.TextToSpeech? by remember { mutableStateOf(null) }
+    var isTtsReady by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        val ttsInstance = android.speech.tts.TextToSpeech(context) { status ->
+            if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                isTtsReady = true
+            }
+        }
+        tts = ttsInstance
+        onDispose {
+            ttsInstance.stop()
+            ttsInstance.shutdown()
+        }
+    }
+
+    if (showDetailDialog) {
+        AlertDialog(
+            onDismissRequest = { showDetailDialog = false },
+            title = { Text(activeDetailTitle, fontWeight = FontWeight.Bold) },
+            text = { Text(activeDetailContent, style = MaterialTheme.typography.bodyLarge) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (isTtsReady) {
+                            tts?.speak(activeDetailContent, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "MemoryDetail")
+                        } else {
+                            Toast.makeText(context, "Voice engine is loading...", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Read Aloud")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDetailDialog = false }) { Text("Close") }
+            }
+        )
+    }
 
     if (showAddDialog) {
         var newNote by remember { mutableStateOf("") }
@@ -130,11 +178,11 @@ fun MemoryScreen(app: JarvisApplication) {
             
             // Mock static items to match UI if empty
             if (memories.isEmpty()) {
-                item { MemoryItem(Icons.Default.Person, "Saved Contact", "Rakib Hasan - 017XXX....", "Today, 10:30 AM", Color(0xFF3B82F6)) {} }
-                item { MemoryItem(Icons.Default.Note, "Note", "Meeting with team at 5 PM", "Today, 09:15 AM", Color(0xFFEAB308)) {} }
-                item { MemoryItem(Icons.Default.Alarm, "Reminder", "Buy groceries", "Today, 08:00 AM", Color(0xFFFF453A)) {} }
-                item { MemoryItem(Icons.Default.InsertDriveFile, "File", "Project_Report.pdf", "Yesterday, 11:45 PM", Color(0xFFEC4899)) {} }
-                item { MemoryItem(Icons.Default.Language, "Website", "Flutter Documentation", "Yesterday, 09:30 PM", Color(0xFF3B82F6)) {} }
+                item { MemoryItem(Icons.Default.Person, "Saved Contact", "Rakib Hasan - 017XXX....", "Today, 10:30 AM", Color(0xFF3B82F6), onClick = { activeDetailTitle = "Saved Contact"; activeDetailContent = "Rakib Hasan - Phone: 01712345678 (Internal contact backup)"; showDetailDialog = true }) {} }
+                item { MemoryItem(Icons.Default.Note, "Note", "Meeting with team at 5 PM", "Today, 09:15 AM", Color(0xFFEAB308), onClick = { activeDetailTitle = "Note Detail"; activeDetailContent = "Meeting with dev team at 5 PM on Jarvis Assistant features."; showDetailDialog = true }) {} }
+                item { MemoryItem(Icons.Default.Alarm, "Reminder", "Buy groceries", "Today, 08:00 AM", Color(0xFFFF453A), onClick = { activeDetailTitle = "Reminder"; activeDetailContent = "Buy fresh groceries from super shop."; showDetailDialog = true }) {} }
+                item { MemoryItem(Icons.Default.InsertDriveFile, "File", "Project_Report.pdf", "Yesterday, 11:45 PM", Color(0xFFEC4899), onClick = { activeDetailTitle = "File Reference"; activeDetailContent = "Project_Report.pdf - System log document."; showDetailDialog = true }) {} }
+                item { MemoryItem(Icons.Default.Language, "Website", "Flutter Documentation", "Yesterday, 09:30 PM", Color(0xFF3B82F6), onClick = { activeDetailTitle = "Web URL Bookmark"; activeDetailContent = "Reference URL: https://flutter.dev/docs"; showDetailDialog = true }) {} }
             }
 
             items(filteredList, key = { it.id }) { memo ->
@@ -144,6 +192,11 @@ fun MemoryScreen(app: JarvisApplication) {
                     subtitle = memo.content,
                     time = "ID: ${memo.id}",
                     iconColor = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        activeDetailTitle = "Saved ${memo.type}"
+                        activeDetailContent = memo.content
+                        showDetailDialog = true
+                    },
                     onDelete = {
                         scope.launch { app.memoryRepository.delete(memo.id) }
                     }
@@ -154,10 +207,11 @@ fun MemoryScreen(app: JarvisApplication) {
 }
 
 @Composable
-fun MemoryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, time: String, iconColor: Color, onDelete: () -> Unit) {
+fun MemoryItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, time: String, iconColor: Color, onClick: () -> Unit = {}, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onClick() }
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

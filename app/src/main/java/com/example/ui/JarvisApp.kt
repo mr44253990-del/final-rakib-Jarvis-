@@ -25,6 +25,7 @@ import com.example.ui.screens.AnalyzeScreen
 import com.example.ui.screens.MemoryScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.ToolsScreen
 
 @Composable
 fun JarvisApp(app: JarvisApplication) {
@@ -78,7 +79,7 @@ fun JarvisApp(app: JarvisApplication) {
             composable("home") { HomeScreen(app, onNavigateToChat = { navController.navigate("chat") }) }
             composable("analyze") { AnalyzeScreen(app) }
             composable("chat") { ChatScreen(app) }
-            composable("tools") { ChatScreen(app) } // Tools maps to Chat/Action screen for now
+            composable("tools") { ToolsScreen(app) }
             composable("memory") { MemoryScreen(app) }
             composable("settings") { SettingsScreen(app) }
         }
