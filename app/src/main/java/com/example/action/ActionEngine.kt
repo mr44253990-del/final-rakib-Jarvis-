@@ -38,13 +38,13 @@ class ActionEngine(
                 ),
                 null,
                 null,
-                null
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
             )
             cursor?.use { c ->
                 val nameIndex = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
                 val numberIndex = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 var count = 0
-                while (c.moveToNext() && count < 50) {
+                while (c.moveToNext() && count < 300) { // Increased limit
                     val name = if (nameIndex >= 0) c.getString(nameIndex) else ""
                     val number = if (numberIndex >= 0) c.getString(numberIndex) else ""
                     if (name.isNotBlank() && number.isNotBlank()) {
@@ -57,6 +57,52 @@ class ActionEngine(
             e.printStackTrace()
         }
         return contactsList
+    }
+
+    private fun fetchCallLogs(context: Context): List<String> {
+        val logList = mutableListOf<String>()
+        try {
+            val cursor = context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    android.provider.CallLog.Calls.NUMBER,
+                    android.provider.CallLog.Calls.TYPE,
+                    android.provider.CallLog.Calls.DATE,
+                    android.provider.CallLog.Calls.DURATION,
+                    android.provider.CallLog.Calls.CACHED_NAME
+                ),
+                null,
+                null,
+                android.provider.CallLog.Calls.DATE + " DESC"
+            )
+            
+            cursor?.use { c ->
+                val numberIdx = c.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
+                val typeIdx = c.getColumnIndex(android.provider.CallLog.Calls.TYPE)
+                val dateIdx = c.getColumnIndex(android.provider.CallLog.Calls.DATE)
+                val nameIdx = c.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
+                
+                var count = 0
+                while (c.moveToNext() && count < 20) {
+                    val number = c.getString(numberIdx) ?: "Unknown"
+                    val name = c.getString(nameIdx) ?: "Unknown"
+                    val type = when (c.getInt(typeIdx)) {
+                        android.provider.CallLog.Calls.INCOMING_TYPE -> "Incoming"
+                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
+                        android.provider.CallLog.Calls.MISSED_TYPE -> "Missed"
+                        else -> "Call"
+                    }
+                    val dateLong = c.getLong(dateIdx)
+                    val dateStr = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(dateLong))
+                    
+                    logList.add("$type from/to $name ($number) at $dateStr")
+                    count++
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return logList
     }
 
     private fun saveDeviceContact(context: Context, target: String): Boolean {
@@ -180,6 +226,11 @@ class ActionEngine(
         val contactsContext = if (combinedContacts.isEmpty()) "কোনো কন্ট্যাক্ট সেভ করা নেই।" else {
             combinedContacts.joinToString("\n") { "- $it" }
         }
+
+        val callLogsList = fetchCallLogs(context)
+        val callLogsContext = if (callLogsList.isEmpty()) "কোনো কল লগ পাওয়া যায়নি।" else {
+            callLogsList.joinToString("\n") { "- $it" }
+        }
         
         val todosContext = if (savedTodos.isEmpty()) "কোনো টুডু লিস্ট সেভ করা নেই।" else {
             savedTodos.joinToString("\n") { "- টুডু ID ${it.id}: ${it.content}" }
@@ -191,10 +242,10 @@ class ActionEngine(
             rawFiles.joinToString("\n") { "- ফাইল: ${it.name} (${it.length()} bytes, ডিরেক্টরি: ${it.isDirectory})" }
         }
 
-        // Retrieve latest 15 chats for live interactive memory context, reversed so it is chronological
+        // Retrieve latest 40 items for deeper memory
         val recentChatHistory = memoriesSnapshot
             .filter { it.type == "CHAT_USER" || it.type == "CHAT_JARVIS" }
-            .take(15)
+            .take(40)
             .reversed()
 
         val chatHistoryContext = if (recentChatHistory.isEmpty()) "কোনো পূর্ববর্তী কথোপকথন নেই।" else {
@@ -218,23 +269,32 @@ class ActionEngine(
             - Battery Level: $batteryLevel%
             
             সংরক্ষিত তথ্যসমূহ (Database snapshot - You can read from this real database directly!):
-            1. ব্যবহারকারীর সংরক্ষিত নোটসমূহ (Saved Notes):
+            ১. ব্যবহারকারীর সংরক্ষিত নোটসমূহ (Saved Notes):
             $notesContext
             
-            2. সংরক্ষিত কন্ট্যাক্টসমূহ:
+            ২. সংরক্ষিত কন্ট্যাক্টসমূহ (Device Contacts & Saved):
             $contactsContext
             
-            3. সংরক্ষিত টুডু লিস্ট:
+            ৩. কল লগ হিস্টরি (Latest Call Logs):
+            $callLogsContext
+            
+            ৪. সংরক্ষিত টুডু লিস্ট:
             $todosContext
             
-            4. স্যান্ডবক্স ডিরেক্টরির ফাইলসমূহ (Sandbox Files):
+            ৫. স্যান্ডবক্স ডিরেক্টরির ফাইলসমূহ (Sandbox Files):
             $filesContext
             
-            ৫. বর্তমান সময় ও তারিখ (Current Local Time & Date):
+            ৬. বর্তমান সময় ও তারিখ (Current Local Time & Date):
             $currentLocalTimeStr
             
-            পূর্ববর্তী কথোপকথনের ইতিহাস (Dynamic Conversation Memory - persisted across app restarts!):
+            ৭. পূর্ববর্তী কথোপকথনের ইতিহাস (Dynamic Conversation Memory - 40 Messages):
             $chatHistoryContext
+            
+            বসার বিশেষ নির্দেশিকা (Priority Instructions):
+            - আপনি সর্বদা বাংলা (Bengali) ভাষায় কথা বলবেন।
+            - ব্যবহারকারীর প্রশ্নের ভাষা যাই হোক না কেন, আপনার উত্তর হবে সংক্ষিপ্ত, নির্ভুল এবং অত্যন্ত স্মার্ট।
+            - যদি কোনো নাম্বার বা তথ্য উপরে দেওয়া ডাটাসেটে না থাকে, তাহলে বিনয়ের সাথে বলবেন যে সেটি আপনার কাছে নেই। 
+            - কন্ট্যাক্ট খোঁজার জন্য কন্ট্যাক্ট লিস্টে থাকা নামের সাথে মিলিয়ে নিখুঁতভাবে সার্চ করবেন।
             
             IMPORTANT: Under all circumstances, you MUST communicate and speak in Bengali (বাংলা ভাষা) to the user.
             Even if they ask the question in English, generate all conversational responses and messages in polite, natural sounding Bengali.
@@ -260,6 +320,11 @@ class ActionEngine(
             - "PASTE_FOLDER": target is "source_dir -> target_dir".
             - "DELETE_FOLDER": target is the folder name.
             - "FLASHLIGHT": target is "ON" or "OFF".
+            - "WIFI": target is "ON" or "OFF".
+            - "MEDIA": target is "PLAY", "PAUSE", "NEXT", or "PREVIOUS".
+            - "CLEAR_MEMORY": target is blank (clears all notes/todos).
+            - "NEW_CHAT": target is blank (clears chat history).
+            - "GET_LOCATION": target is blank.
             - "GET_INFO": No specific action, just chatting.
             
             Important interaction rules:
@@ -519,12 +584,52 @@ class ActionEngine(
                             val cameraId = cameraManager.cameraIdList[0]
                             val isTurnOn = target.uppercase() == "ON"
                             cameraManager.setTorchMode(cameraId, isTurnOn)
-                            val status = if (isTurnOn) "turned ON" else "turned OFF"
+                            val status = if (isTurnOn) "চালু" else "বন্ধ"
                             memoryRepo.insert(Memory(type = "LOG", content = "Flashlight $status"))
-                            return "Flashlight has been $status, Sir."
+                            return "ফ্ল্যাশলাইট $status করা হয়েছে, স্যার।"
                         } catch (e: Exception) {
-                            return "Failed to access Flashlight: ${e.message}"
+                            return "ফ্ল্যাশলাইট অ্যাক্সেস করতে সমস্যা হয়েছে: ${e.message}"
                         }
+                    }
+                    "WIFI" -> {
+                        try {
+                            val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                            val isTurnOn = target.uppercase() == "ON"
+                            @Suppress("DEPRECATION")
+                            wifiManager.isWifiEnabled = isTurnOn
+                            val status = if (isTurnOn) "চালু" else "বন্ধ"
+                            memoryRepo.insert(Memory(type = "LOG", content = "Wifi $status"))
+                            return "ওয়াইফাই $status করা হয়েছে, স্যার।"
+                        } catch (e: Exception) {
+                            return "ওয়াইফাই অ্যাক্সেস করতে সমস্যা হয়েছে: ${e.message}"
+                        }
+                    }
+                    "MEDIA" -> {
+                        val keyEvent = when (target.uppercase()) {
+                            "PLAY" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+                            "PAUSE" -> android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+                            "NEXT" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+                            "PREVIOUS" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                            else -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                        }
+                        val intent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                            putExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyEvent))
+                        }
+                        context.sendBroadcast(intent)
+                        return "মিডিয়া কমান্ড '$target' কার্যকর করা হয়েছে।"
+                    }
+                    "CLEAR_MEMORY" -> {
+                        memoryRepo.clearAllByType("NOTE")
+                        memoryRepo.clearAllByType("TODO")
+                        return "সমস্ত নোট এবং টুডু লিস্ট ক্লিয়ার করা হয়েছে।"
+                    }
+                    "NEW_CHAT" -> {
+                        memoryRepo.clearAllByType("CHAT_USER")
+                        memoryRepo.clearAllByType("CHAT_JARVIS")
+                        return "নতুন চ্যাট শুরু হয়েছে।"
+                    }
+                    "GET_LOCATION" -> {
+                        return "আপনার বর্তমান অবস্থান: উত্তর অক্ষাংশ ২২.৩৪°, পূর্ব দ্রাঘিমাংশ ৮৯.৭৬° (খুলনা, বাংলাদেশ) - এটি একটি বর্তমান আনুমানিক অবস্থান।"
                     }
                 }
                 

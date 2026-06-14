@@ -28,6 +28,12 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
+    create("debugConfig") {
+      storeFile = file("${rootDir}/debug.keystore")
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
+    }
   }
 
   buildTypes {
@@ -38,7 +44,7 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Use default debug signing config (auto-generates keystore at execution time)
+      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
@@ -92,7 +98,7 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
+  implementation(libs.play.services.location)
   implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

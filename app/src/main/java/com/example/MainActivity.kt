@@ -60,6 +60,9 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent?.action == android.content.Intent.ACTION_ASSIST) {
+            setTheme(com.example.R.style.Theme_MyApplication_Assistant)
+        }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -78,6 +81,7 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.READ_CONTACTS,
                     Manifest.permission.CALL_PHONE,
                     Manifest.permission.READ_SMS,
+                    Manifest.permission.READ_CALL_LOG,
                     Manifest.permission.CAMERA,
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION

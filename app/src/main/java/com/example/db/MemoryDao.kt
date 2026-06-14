@@ -16,4 +16,7 @@ interface MemoryDao {
 
     @Query("DELETE FROM memories WHERE id = :id")
     suspend fun deleteMemory(id: Int)
+
+    @Query("DELETE FROM memories WHERE type = :type")
+    suspend fun deleteByType(type: String)
 }

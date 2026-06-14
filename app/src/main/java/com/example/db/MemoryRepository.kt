@@ -12,4 +12,8 @@ class MemoryRepository(private val memoryDao: MemoryDao) {
     suspend fun delete(id: Int) {
         memoryDao.deleteMemory(id)
     }
+
+    suspend fun clearAllByType(type: String) {
+        memoryDao.deleteByType(type)
+    }
 }
