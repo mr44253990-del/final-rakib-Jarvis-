@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.READ_CONTACTS,
                     Manifest.permission.CALL_PHONE,
                     Manifest.permission.READ_SMS,
+                    Manifest.permission.SEND_SMS,
                     Manifest.permission.READ_CALL_LOG,
                     Manifest.permission.CAMERA,
                     Manifest.permission.ACCESS_FINE_LOCATION,
