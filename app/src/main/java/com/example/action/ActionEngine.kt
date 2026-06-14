@@ -26,6 +26,26 @@ class ActionEngine(
     private val memoryRepo: MemoryRepository
 ) {
 
+    private fun launchApp(context: Context, appName: String): String {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfoList = pm.queryIntentActivities(intent, 0)
+        for (info in resolveInfoList) {
+            val label = info.loadLabel(pm).toString()
+            if (label.contains(appName, ignoreCase = true)) {
+                val launchIntent = pm.getLaunchIntentForPackage(info.activityInfo.packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    return "$label অ্যাপ্লিকেশনটি চালু করা হচ্ছে..."
+                }
+            }
+        }
+        return "$appName নামে কোনো অ্যাপ পাওয়া যায়নি।"
+    }
+
     private fun fetchDeviceContacts(context: Context): List<String> {
         val contactsList = mutableListOf<String>()
         try {
@@ -325,6 +345,16 @@ class ActionEngine(
             - "CLEAR_MEMORY": target is blank (clears all notes/todos).
             - "NEW_CHAT": target is blank (clears chat history).
             - "GET_LOCATION": target is blank.
+            - "LAUNCH_APP": target is the app name.
+            - "OPEN_URL": target is the URL to open (e.g. google.com).
+            - "BLUETOOTH": target is "ON" or "OFF".
+            - "CLIPBOARD_GET": target is blank.
+            - "CLIPBOARD_SET": target is text to copy.
+            - "CALC": target is expression.
+            - "VOLUME": target is "UP", "DOWN", "MUTE" or "MAX".
+            - "RINGER": target is "RING", "VIBRATE" or "SILENT".
+            - "READ_SMS": target is blank.
+            - "SEND_SMS": target is "PhoneNumber -> message".
             - "GET_INFO": No specific action, just chatting.
             
             Important interaction rules:
@@ -604,6 +634,21 @@ class ActionEngine(
                             return "ওয়াইফাই অ্যাক্সেস করতে সমস্যা হয়েছে: ${e.message}"
                         }
                     }
+                    "LAUNCH_APP" -> {
+                        return launchApp(context, target.trim())
+                    }
+                    "OPEN_URL" -> {
+                        return try {
+                            val url = if (target.startsWith("http")) target else "https://$target"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                            "ব্রাউজারে $target খোলা হচ্ছে..."
+                        } catch (e: Exception) {
+                            "URL খুলতে সমস্যা হয়েছে: ${e.message}"
+                        }
+                    }
                     "MEDIA" -> {
                         val keyEvent = when (target.uppercase()) {
                             "PLAY" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY
@@ -630,6 +675,96 @@ class ActionEngine(
                     }
                     "GET_LOCATION" -> {
                         return "আপনার বর্তমান অবস্থান: উত্তর অক্ষাংশ ২২.৩৪°, পূর্ব দ্রাঘিমাংশ ৮৯.৭৬° (খুলনা, বাংলাদেশ) - এটি একটি বর্তমান আনুমানিক অবস্থান।"
+                    }
+                    "BLUETOOTH" -> {
+                        try {
+                            val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                            if (adapter != null) {
+                                if (target.uppercase() == "ON") adapter.enable() else adapter.disable()
+                                return "ব্লুটুথ ${if (target.uppercase() == "ON") "চালু" else "বন্ধ"} করা হয়েছে।"
+                            }
+                            return "ব্লুটুথ সমর্থিত নয়।"
+                        } catch (e: Exception) { return "ব্লুটুথ অ্যাক্সেস করতে সমস্যা হয়েছে।" }
+                    }
+                    "CLIPBOARD_GET" -> {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        return clipboard.primaryClip?.getItemAt(0)?.text?.toString() ?: "ক্লিপবোর্ডে কিছু নেই।"
+                    }
+                    "CLIPBOARD_SET" -> {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Jarvis", target)
+                        clipboard.setPrimaryClip(clip)
+                        return "ক্লিপবোর্ডে কপি করা হয়েছে।"
+                    }
+                    "CALC" -> {
+                         return try {
+                             // Very basic calculator
+                             val expression = target.replace(" ", "")
+                             val result = javax.script.ScriptEngineManager().getEngineByName("rhino")?.eval(expression) ?: "অজানা"
+                             "ফলাফল: $result"
+                         } catch (e: Exception) { "হিসাব করতে সমস্যা হয়েছে।" }
+                    }
+                    "VOLUME" -> {
+                        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                        when (target.uppercase()) {
+                            "UP" -> audioManager.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI)
+                            "DOWN" -> audioManager.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
+                            "MUTE" -> audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, android.media.AudioManager.FLAG_SHOW_UI)
+                            "MAX" -> audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC), android.media.AudioManager.FLAG_SHOW_UI)
+                        }
+                        return "ভলিউম ${target} করা হয়েছে।"
+                    }
+                    "RINGER" -> {
+                        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                        try {
+                            when (target.uppercase()) {
+                                "RING" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_NORMAL
+                                "VIBRATE" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_VIBRATE
+                                "SILENT" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_SILENT
+                            }
+                            return "রিংটোন মোড ${target} করা হয়েছে।"
+                        } catch (e: Exception) {
+                            return "রিংটোন মোড পরিবর্তন করতে সমস্যা হয়েছে (পারমিশন প্রয়োজন হতে পারে)।"
+                        }
+                    }
+                    "READ_SMS" -> {
+                        val smsList = mutableListOf<String>()
+                        try {
+                            val cursor = context.contentResolver.query(
+                                Uri.parse("content://sms/inbox"),
+                                arrayOf("address", "body", "date"),
+                                null,
+                                null,
+                                "date DESC LIMIT 5"
+                            )
+                            cursor?.use { c ->
+                                val addressIdx = c.getColumnIndex("address")
+                                val bodyIdx = c.getColumnIndex("body")
+                                val dateIdx = c.getColumnIndex("date")
+                                
+                                while (c.moveToNext()) {
+                                    val address = c.getString(addressIdx) ?: "Unknown"
+                                    val body = c.getString(bodyIdx) ?: ""
+                                    val dateLong = c.getLong(dateIdx)
+                                    val dateStr = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(dateLong))
+                                    smsList.add("From $address ($dateStr): $body")
+                                }
+                            }
+                        } catch (e: Exception) { e.printStackTrace() }
+                        return if (smsList.isEmpty()) "কোনো নতুন মেসেজ নেই।" else smsList.joinToString("\n")
+                    }
+                    "SEND_SMS" -> {
+                        try {
+                            val parts = target.split("->").map { it.trim() }
+                            if (parts.size >= 2) {
+                                val number = parts[0]
+                                val text = parts[1]
+                                val smsManager = android.telephony.SmsManager.getDefault()
+                                smsManager.sendTextMessage(number, null, text, null, null)
+                                return "মেসেজ পাঠানো হয়েছে: $number-এ"
+                            }
+                            return "মেসেজ পাঠাতে ব্যর্থ।"
+                        } catch(e: Exception) { return "এসএমএস পাঠাতে সমস্যা হয়েছে।" }
                     }
                 }
                 
